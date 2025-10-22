@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ShareVolume - Loading...</title>
+<!-- Bootstrap 5 CDN -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<style>
+  body {
+    padding: 2rem;
+  }
+  .card {
+    margin-top: 1rem;
+  }
+  .loading {
+    text-align: center;
+    padding: 2rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1 id="entity-name-header" class="text-center mb-4">Loading...</h1>
+  <div class="row justify-content-center">
+    <div class="col-md-4 text-center">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title" id="share-entity-name">Entity Name</h5>
+          <p class="card-text">Maximum Shares Outstanding (FY)</p>
+          <p class="mb-1">Value: <span id="share-max-value">-</span></p>
+          <p>Fiscal Year: <span id="share-max-fy">-</span></p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4 text-center">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title" id="share-entity-name2">Entity Name</h5>
+          <p class="card-text">Minimum Shares Outstanding (FY)</p>
+          <p class="mb-1">Value: <span id="share-min-value">-</span></p>
+          <p>Fiscal Year: <span id="share-min-fy">-</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="loading-indicator" class="loading mt-4">Loading data...</div>
+</div>
+
+<!-- Include Bootstrap JS and dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(async () => {
+  // Helper to get URL parameters
+  function getQueryParam(param) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(param);
+  }
+
+  // URL parameters
+  const paramCik = getQueryParam('CIK');
+  const paramUrl = getQueryParam('url');
+
+  // Constants
+  const defaultCik = '0000002969'; // Air Products
+  const proxyUrl = 'https://aipipe.com/'; // placeholder proxy, replace if needed
+
+  // Determine CIK and data URL
+  let cik = paramCik || defaultCik;
+  let dataUrl = '';
+
+  if (paramUrl) {
+    // Use provided URL, assuming it points directly to JSON
+    dataUrl = paramUrl;
+  } else {
+    // Build URL based on cik
+    // Using SEC API endpoint with CIK
+    // Note: For CIK, the endpoint is similar to:
+    // https://data.sec.gov/api/xbrl/companyconcept/cik0000002969/dei/entitycommonstocksharesoutstanding.json
+    dataUrl = `https://data.sec.gov/api/xbrl/companyconcept/cik${cik}/dei/entitycommonstocksharesoutstanding.json`;
+  }
+
+  // Set user-agent header as per SEC guidance
+  const headers = {
+    'User-Agent': 'YourAppName/1.0 (your.email@example.com)'
+  };
+
+  // Function to fetch JSON with error handling
+  async function fetchJSON(url, customHeaders = {}) {
+    const response = await fetch(url, {
+      headers: {...headers, ...customHeaders}
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    return await response.json();
+  }
+
+  // Load data
+  let jsonData;
+  try {
+    jsonData = await fetchJSON(dataUrl);
+  } catch (err) {
+    document.getElementById('loading-indicator').textContent = 'Error loading data.';
+    console.error(err);
+    return;
+  }
+
+  // Parse data
+  const entityName = jsonData['entityName'] || 'Unknown Entity';
+
+  // Filter shares units for fy > 2020 and numeric val
+  const sharesUnits = (jsonData.units && jsonData.units.shares) || [];
+
+  const filteredShares = sharesUnits.filter(entry => {
+    if (entry.fy && entry.val !== undefined && entry.val !== null) {
+      // fy as string, compare as number
+      const fyNum = parseInt(entry.fy);
+      return fyNum > 2020 && !isNaN(fyNum) && !isNaN(entry.val);
+    }
+    return false;
+  });
+
+  if (filteredShares.length === 0) {
+    document.getElementById('loading-indicator').textContent = 'No data available for fy > 2020.';
+    return;
+  }
+
+  // Find max and min by val, break ties arbitrarily
+  let maxShare = filteredShares[0];
+  let minShare = filteredShares[0];
+
+  for (const share of filteredShares) {
+    if (share.val > maxShare.val) {
+      maxShare = share;
+    } else if (share.val === maxShare.val) {
+      // optional tie-breaker, keep first
+    }
+    if (share.val < minShare.val) {
+      minShare = share;
+    } else if (share.val === minShare.val) {
+      // optional tie-breaker
+    }
+  }
+
+  // Build data.json structure
+  const dataObject = {
+    entityName: entityName,
+    max: { val: maxShare.val, fy: maxShare.fy },
+    min: { val: minShare.val, fy: minShare.fy }
+  };
+
+  // Save data.json (simulate save; in real environment, would be saved server-side)
+  // For demonstration, we just keep in memory.
+
+  // Update HTML elements
+  document.title = `ShareVolume - ${entityName}`;
+  document.getElementById('entity-name-header').textContent = entityName;
+
+  // Update shared IDs
+  document.getElementById('share-entity-name').textContent = entityName;
+  document.getElementById('share-entity-name2').textContent = entityName;
+  document.getElementById('share-max-value').textContent = dataObject.max.val;
+  document.getElementById('share-max-fy').textContent = dataObject.max.fy;
+  document.getElementById('share-min-value').textContent = dataObject.min.val;
+  document.getElementById('share-min-fy').textContent = dataObject.min.fy;
+
+  // Hide loading indicator
+  document.getElementById('loading-indicator').style.display = 'none';
+
+})();
+</script>
+</body>
+</html>
